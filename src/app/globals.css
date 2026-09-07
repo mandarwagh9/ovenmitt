@@ -1,26 +1,60 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Oven Mitt design tokens.
+   Theme lock: dark only. This is infrastructure tooling meant to be read in a
+   terminal-adjacent context, so the page does not invert per section or per OS.
+   One accent (amber) across the whole page. Green and red appear ONLY as
+   semantic transaction state, never as decoration. */
+@theme {
+  --color-base:        #0b0b0d;
+  --color-surface:     #121215;
+  --color-surface-2:   #17171b;
+  --color-line:        #26262c;
+  --color-line-soft:   #1c1c21;
+
+  --color-ink:         #f2f1ee;
+  --color-ink-2:       #a6a5a0;
+  --color-ink-3:       #6e6d69;
+
+  --color-accent:      #e0a458;
+  --color-accent-dim:  #a97a3f;
+  --color-accent-wash: #2a2016;
+
+  --color-ok:          #6fae7d;
+  --color-bad:         #d0705f;
+
+  --radius-card: 14px;
+  --radius-ctl: 10px;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-base);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers, addresses and hashes are always mono and tabular so columns of
+   values line up and do not jitter as they stream in. */
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+::selection { background: var(--color-accent); color: #16110a; }
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
