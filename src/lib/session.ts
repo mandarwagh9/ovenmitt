@@ -62,18 +62,36 @@ export async function buildAgentActionTx(
   return tx;
 }
 
-/** Agent-signed sweep: returns every remaining lamport (minus fee) to the owner
- *  and writes the close receipt. This is what "revoke" actually executes. */
+/** Agent-signed sweep: returns every remaining lamport (minus the real fee) to
+ *  the owner and writes the close receipt. This is what "revoke" executes.
+ *
+ *  The fee is queried rather than assumed. A hardcoded 5000 is only correct for
+ *  one particular message shape, and if the true fee is higher the sweep leaves
+ *  the account short and the whole revoke fails, which is the one path that must
+ *  not fail. Two passes: build, price the real message, rebuild at that price. */
 export async function buildCloseSessionTx(
   c: Connection, agent: PublicKey, owner: PublicKey, reason: string, balance: number,
 ): Promise<Transaction | null> {
   const receipt: CloseReceipt = { p: "mitt/1", t: "close", s: sessionIdFor(agent.toBase58()), r: reason.slice(0, 32) };
   const { blockhash, lastValidBlockHeight } = await c.getLatestBlockhash("confirmed");
-  const tx = new Transaction({ feePayer: agent, blockhash, lastValidBlockHeight });
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }));
-  tx.add(memoIx(encodeReceipt(receipt), agent));
-  const fee = 5000;
-  const sweep = balance - fee;
-  if (sweep > 0) tx.add(SystemProgram.transfer({ fromPubkey: agent, toPubkey: owner, lamports: sweep }));
-  return tx;
+
+  const assemble = (sweep: number) => {
+    const tx = new Transaction({ feePayer: agent, blockhash, lastValidBlockHeight });
+    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }));
+    tx.add(memoIx(encodeReceipt(receipt), agent));
+    if (sweep > 0) tx.add(SystemProgram.transfer({ fromPubkey: agent, toPubkey: owner, lamports: sweep }));
+    return tx;
+  };
+
+  const FALLBACK_FEE = 5000;
+  let fee = FALLBACK_FEE;
+  try {
+    const priced = await c.getFeeForMessage(assemble(Math.max(0, balance - FALLBACK_FEE)).compileMessage());
+    if (typeof priced.value === "number" && priced.value > 0) fee = priced.value;
+  } catch {
+    // RPC would not price it; fall back and let simulation surface any shortfall.
+  }
+
+  if (balance <= fee) return assemble(0); // nothing to sweep, still record the close
+  return assemble(balance - fee);
 }

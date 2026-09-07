@@ -103,6 +103,15 @@ export default function Dashboard() {
    *  is pointed at. */
   const signSendConfirm = async (t: Transaction, signWith: SvmProvider | Keypair) => {
     const c = conn();
+    // Capture these before signing. A wallet returns a re-deserialized transaction,
+    // so read the values off the object we built rather than trusting them to survive
+    // the round trip, and fail loudly here instead of with a non-null assertion.
+    const blockhash = t.recentBlockhash;
+    const lastValidBlockHeight = t.lastValidBlockHeight;
+    if (!blockhash || lastValidBlockHeight === undefined) {
+      throw new Error("Transaction is missing its blockhash, so it cannot be confirmed.");
+    }
+
     setTx({ phase: "signing" });
     let raw: Buffer;
     if (signWith instanceof Keypair) {
@@ -116,10 +125,7 @@ export default function Dashboard() {
     const started = performance.now();
     const sig = await c.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
     setTx({ phase: "confirming", signature: sig });
-    const res = await c.confirmTransaction(
-      { signature: sig, blockhash: t.recentBlockhash!, lastValidBlockHeight: t.lastValidBlockHeight! },
-      "confirmed",
-    );
+    const res = await c.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
     const ms = Math.round(performance.now() - started);
     if (res.value.err) throw new Error(`Transaction failed on chain: ${JSON.stringify(res.value.err)}`);
     setTx({ phase: "done", signature: sig, ms });
@@ -169,7 +175,11 @@ export default function Dashboard() {
     try {
       setTx({ phase: "building" });
       const kp = Keypair.fromSecretKey(bs58.decode(secret));
-      const amount = Math.min(Math.floor(0.01 * LAMPORTS_PER_COOK), Math.max(0, view.balance - 10000));
+      // Read the balance fresh. view.balance comes from the indexer poll and can be
+      // stale, which would build a transfer the session cannot actually cover.
+      const live = await conn().getBalance(kp.publicKey);
+      const amount = Math.min(Math.floor(0.01 * LAMPORTS_PER_COOK), Math.max(0, live - 10000));
+      if (amount <= 0) throw new Error("This session has no spendable balance left.");
       const t = await buildAgentActionTx(
         conn(), kp.publicKey, new PublicKey(owner), amount, "transfer",
         `returned ${fmtCook(amount)} COOK to owner`,
