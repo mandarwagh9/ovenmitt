@@ -147,3 +147,65 @@ export async function spend(c, agent, toPubkey, lamports, kind, detail) {
   if (res.value.err) throw new Error(`Transaction failed on chain: ${JSON.stringify(res.value.err)}`);
   return { signature: sig, ms: Date.now() - started, url: txUrl(sig) };
 }
+
+/** Owner-signed grant: fund the session key with exactly the cap and write the
+ *  open receipt in the same transaction. */
+export async function openSession(c, owner, agentPubkey, capLamports, ttlSeconds, label) {
+  const receipt = {
+    p: "mitt/1", t: "open",
+    s: sessionIdFor(agentPubkey.toBase58()),
+    a: agentPubkey.toBase58(),
+    c: capLamports,
+    x: Math.floor(Date.now() / 1000) + ttlSeconds,
+    ...(label ? { n: String(label).slice(0, 48) } : {}),
+  };
+  const { blockhash, lastValidBlockHeight } = await c.getLatestBlockhash("confirmed");
+  const tx = new Transaction({ feePayer: owner.publicKey, blockhash, lastValidBlockHeight });
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }));
+  tx.add(SystemProgram.transfer({ fromPubkey: owner.publicKey, toPubkey: agentPubkey, lamports: capLamports }));
+  tx.add(memoIx(JSON.stringify(receipt), owner.publicKey));
+
+  const sim = await c.simulateTransaction(tx);
+  if (sim.value.err) throw new Error(`Simulation failed: ${JSON.stringify(sim.value.err)}`);
+
+  tx.sign(owner);
+  const started = Date.now();
+  const sig = await c.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+  const res = await c.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+  if (res.value.err) throw new Error(`Grant failed on chain: ${JSON.stringify(res.value.err)}`);
+  return { signature: sig, ms: Date.now() - started, url: txUrl(sig) };
+}
+
+/** Agent-signed revoke: sweep the remainder home and close the session. The fee is
+ *  priced from the real compiled message, never assumed. */
+export async function closeSession(c, agent, ownerPubkey, reason = "revoked") {
+  const owner = new PublicKey(ownerPubkey);
+  const balance = await c.getBalance(agent.publicKey);
+  const receipt = { p: "mitt/1", t: "close", s: sessionIdFor(agent.publicKey.toBase58()), r: String(reason).slice(0, 32) };
+  const { blockhash, lastValidBlockHeight } = await c.getLatestBlockhash("confirmed");
+
+  const assemble = (sweep) => {
+    const tx = new Transaction({ feePayer: agent.publicKey, blockhash, lastValidBlockHeight });
+    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }));
+    tx.add(memoIx(JSON.stringify(receipt), agent.publicKey));
+    if (sweep > 0) tx.add(SystemProgram.transfer({ fromPubkey: agent.publicKey, toPubkey: owner, lamports: sweep }));
+    return tx;
+  };
+
+  let fee = 5000;
+  try {
+    const priced = await c.getFeeForMessage(assemble(Math.max(0, balance - 5000)).compileMessage());
+    if (typeof priced.value === "number" && priced.value > 0) fee = priced.value;
+  } catch { /* fall back to the default and let simulation catch a shortfall */ }
+
+  const tx = assemble(balance > fee ? balance - fee : 0);
+  const sim = await c.simulateTransaction(tx);
+  if (sim.value.err) throw new Error(`Simulation failed: ${JSON.stringify(sim.value.err)}`);
+
+  tx.sign(agent);
+  const started = Date.now();
+  const sig = await c.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+  const res = await c.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+  if (res.value.err) throw new Error(`Revoke failed on chain: ${JSON.stringify(res.value.err)}`);
+  return { signature: sig, ms: Date.now() - started, url: txUrl(sig), swept: balance > fee ? balance - fee : 0, fee };
+}

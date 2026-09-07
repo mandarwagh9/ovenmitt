@@ -157,6 +157,18 @@ Prints chain version, genesis hash, current slot, a simulated grant
 transaction, the fee for it, and confirms the SPL Token, Token-2022,
 Associated Token and Memo programs are deployed.
 
+### Run the whole lifecycle headlessly
+
+```bash
+node scripts/demo.mjs          # prints a throwaway wallet and what it needs
+node scripts/demo.mjs --run    # grant, spend, revoke, with explorer links
+```
+
+Grants a session, spends under the cap, **attempts an over-cap spend and checks the
+chain refuses it**, then revokes and sweeps. It uses a throwaway wallet in
+`.demo-owner.json` (gitignored) rather than your real one, so no key of yours is
+written to disk. About 0.024 COOK covers all three signatures.
+
 ---
 
 ## Using a session from an agent
