@@ -7,7 +7,7 @@ session key, funds it with exactly the cap you choose, and writes an on-chain
 receipt for every single thing that key does. When you want it to stop, one
 click sweeps the remaining balance home and closes the session on chain.
 
-Live app: <!-- DEPLOY_URL --> _(see Deployment below)_
+Live app: <https://mitt-cookiechain.vercel.app>
 Chain: Cookie Chain mainnet (`https://rpc.cookiescan.io`)
 
 ---
