@@ -48,7 +48,7 @@ export function LiveChain() {
           </span>
         </div>
         <span className="num text-[12.5px] text-ink-3">
-          {feed?.slot ? `slot ${feed.slot.toLocaleString()}` : "connecting"}
+          {feed?.slot ? `slot ${feed.slot.toLocaleString("en-US")}` : "connecting"}
         </span>
       </div>
 

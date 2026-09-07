@@ -191,6 +191,57 @@ radius becomes a number you chose.
 
 ---
 
+## MCP server: put a real agent on the leash
+
+The repo ships an MCP server so Claude Code, Claude Desktop or Cursor can spend
+under a leash you granted in the browser. It runs locally over stdio and signs on
+your machine. The read-only tools need no key at all.
+
+```bash
+claude mcp add ovenmitt -- node /absolute/path/to/ovenmitt/mcp/server.mjs
+```
+
+Or by hand, in your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "ovenmitt": {
+      "command": "node",
+      "args": ["/absolute/path/to/ovenmitt/mcp/server.mjs"],
+      "env": { "MITT_SESSION_KEY": "<base58 session key from the dashboard>" }
+    }
+  }
+}
+```
+
+| Tool | Needs a key | What it does |
+| --- | --- | --- |
+| `mitt_chain_info` | no | Cookie Chain slot, version and fee |
+| `mitt_status` | no, with an `agent` argument | cap, spent, remaining, expiry, revoked |
+| `mitt_history` | no, with an `agent` argument | every receipt this session wrote, with explorer links |
+| `mitt_spend` | yes | transfer plus receipt, simulated first, refused above the cap |
+
+Verify it without a wallet or any funds:
+
+```bash
+pnpm mcp:smoke
+```
+
+That connects a real MCP client over stdio, lists the tools, reads live chain
+state, and checks that `mitt_spend` refuses when no key is present.
+
+### Why this matters more than it looks
+
+`cookie-mcp` already gives an agent Cookie Chain tools, but it signs with whatever
+key you hand it, so its blast radius is your whole wallet. Point it at a mitt
+session key instead and the blast radius becomes a number you chose, with every
+action leaving a receipt. The leash is composable with tooling that knows nothing
+about it, because enforcement lives in how the key is funded rather than in an
+API a client has to respect.
+
+---
+
 ## The receipt protocol (`mitt/1`)
 
 Receipts are JSON in an SPL Memo instruction, kept under 400 bytes.
